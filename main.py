@@ -27,7 +27,7 @@ with open('queries.txt', 'r') as f:
 PARAMS = {
 'max_results': "500",
 'start_time': "2008-01-01T00:00:00Z", # (YYYY-MM-DDTHH:mm:ssZ) -> RFC3339 date-time
-'end_time': "2021-12-31T23:59:59Z", # (YYYY-MM-DDTHH:mm:ssZ)
+'end_time': "2022-09-30T23:59:59Z", # (YYYY-MM-DDTHH:mm:ssZ)
 'tweet.fields': "attachments,author_id,conversation_id,created_at,entities,geo,id,in_reply_to_user_id,lang,possibly_sensitive,public_metrics,referenced_tweets,reply_settings,source,text,withheld",
 'expansions': "attachments.poll_ids,attachments.media_keys,author_id,geo.place_id,in_reply_to_user_id,referenced_tweets.id,entities.mentions.username,referenced_tweets.id.author_id",
 'media.fields': "duration_ms,height,media_key,preview_image_url,type,url,width,public_metrics,alt_text",
@@ -40,12 +40,13 @@ for h in HASHTAGS:
     print(f'Downloading {h}...')
     count = 0
     PARAMS['query'] = h
+    last_download_failed = False
     try:
         del PARAMS['next_token']
     except KeyError:
         pass
     # API pagination
-    while 'next_token' in PARAMS or count == 0:
+    while 'next_token' in PARAMS or count == 0 or last_download_failed:
         time.sleep(3)
         try:
             print(f'Downloading {h} with next token {PARAMS["next_token"]}...')
@@ -58,28 +59,34 @@ for h in HASHTAGS:
         req.prepare_url(URL, PARAMS)
         r = s.get(req.url)
         if not r.ok:
+            last_download_failed = True
             with open('download_log.txt', 'a') as f:
                 f.write(f'Download failed for {h} -- status not ok\n')
-                break
+                continue
         try:
             j = json.loads(r.content)
         except:
+            last_download_failed = True
             with open('download_log.txt', 'a') as f:
                 f.write(f'Download failed for {h} -- JSON content not correctly loaded\n')
-                break
+                continue
         try:
             PARAMS['next_token'] = j['meta']['next_token']
         except KeyError:
             try:
-                del PARAMS['next_token']
+                if not last_download_failed:
+                    del PARAMS['next_token']
             except KeyError:
                 pass
-        count += 1
+        if not last_download_failed:
+            count += 1
         try:
             if not j['meta']['result_count'] == 0:
                 with open(f'{DATA_FOLDER}/{h}_{count}.json', 'w') as f:
                     json.dump(j, f, ensure_ascii=False)
+                last_download_failed = False
         except:
+            last_download_failed = True
             with open('download_log.txt', 'a') as f:
                 f.write(f'Download failed for {h} -- JSON export failed\n')
-                break
+                continue
