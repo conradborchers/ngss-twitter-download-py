@@ -1,2 +1,4 @@
 *.json
-*.txt
+token.txt
+download_log.txt
+
