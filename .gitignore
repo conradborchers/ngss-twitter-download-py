@@ -1,4 +1,4 @@
 *.json
 token.txt
 download_log.txt
-
+*.zip
