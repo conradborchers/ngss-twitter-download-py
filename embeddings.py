@@ -46,9 +46,9 @@ for file in tqdm(files):
 count = 0
 for key in tqdm(d_tweet.keys()):
     # Every 10k encodings
-    if count//10000:
-        save_embeddings(d_emb)
-        time.sleep(60*3) # sleep 3 mins
+    #if count//10000:
+    #    save_embeddings(d_emb)
+    #    time.sleep(60*3) # sleep 3 mins
     if key not in d_emb:
         d_emb[key] = model.encode(d_tweet[key]).tolist()
         count += 1
@@ -63,4 +63,4 @@ for key in tqdm(d_tweet.keys()):
 # Export
 out = pd.concat(rows)  
 out.columns = ['status_id'] + ['text_emb_dim_' + str(i) for i in range(1, out.shape[1])]
-out.to_csv('./sentence-emebeddings-ngss.csv', index=False)
+out.to_csv('./sentence-embeddings-ngss.csv', index=False)
