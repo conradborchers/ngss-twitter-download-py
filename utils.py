@@ -1,6 +1,11 @@
 import json
 import re
 import requests
+import datetime
+import warnings
+import time
+import glob
+import pandas as pd
 
 class ApiError(Exception):
     """
@@ -8,6 +13,54 @@ class ApiError(Exception):
     during API calls.
     """
     pass
+
+def clean_link(s):
+    uid = s.lower().split('twitter.com/')[-1].split('/')[0] 
+    return uid
+
+def get_url_ids(f='12-2022-twitter-links.csv'):
+    df = pd.read_csv(f)
+    uids = list(set(df.scraped_links.map(clean_link)))
+    return uids
+
+def get_most_recent_dict():
+    tmp = pd.read_csv(max(glob.glob('twitter-ids-*')))
+    return {user: uid for user, uid in zip(tmp.user, tmp.uid)}
+
+def get_most_recent_ids():
+    tmp = pd.read_csv(max(glob.glob('twitter-ids-*')))
+    return sorted(list(set(tmp.uid.to_list())))
+
+def get_id_dict():
+    uids = get_url_ids()
+    res = get_most_recent_dict() # OR: # res = dict()
+    uids = list(set(uids) - set(res.keys()))
+    for i, uid in enumerate(uids):
+        res[uid] = look_up_twitter_acount_id(uid)
+        if i%500 == 0 and i>0:
+            print('exporting')
+            export_id_dict(res)
+    export_id_dict(res)
+    return res
+
+def export_id_dict(res):
+    res = {k: v for k, v in res.items() if k!='' and v is not None}
+    dd = pd.DataFrame.from_dict(res, orient='index').reset_index()
+    dd.columns = ['user', 'uid']
+    dd.to_csv(f'twitter-ids-{datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S")}.csv', index=False)
+    return
+
+def get_done_uids():
+    if len(glob.glob('twitter-done-uids-*')) == 0:
+        return []
+    tmp = pd.read_csv(max(glob.glob('twitter-done-uids-*')))
+    ans = sorted(list(set(tmp.uid.to_list())))
+    return [str(i) for i in ans]
+
+def export_done_uids(l: list):
+    dd = pd.DataFrame({'uid': l})
+    dd.to_csv(f'twitter-done-uids-{datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S")}.csv', index=False)
+    return
 
 def read_bearer_token(file_path = 'bearer_token.txt'):
     """
@@ -34,7 +87,7 @@ def read_bearer_token(file_path = 'bearer_token.txt'):
     f.close() 
     return BEARER_TOKEN
 
-def look_up_twitter_acount_id(BEARER_TOKEN, user_name):
+def look_up_twitter_acount_id(user_name):
     """
     This is a helper function to set a simple Twitter API 
     request to look up a Twitter user ID based on a user
@@ -68,6 +121,11 @@ def look_up_twitter_acount_id(BEARER_TOKEN, user_name):
         Either the request status code was not 200
         or the requested user name was malformed.
     """
+    if not isinstance(user_name, str):
+        return
+    if len(user_name) == 0:
+        return
+
     # If a handle was parsed, convert to user name
     if (user_name[0] == "@"):
         user_name = user_name[1:]
@@ -75,19 +133,24 @@ def look_up_twitter_acount_id(BEARER_TOKEN, user_name):
     # If user name does not only contain letters, numbers, or
     # underscores, raise error
     if not re.match("^[\w\d_]*$", user_name):
-        raise ApiError('The user name you requested seems to be malformed.')
+        #raise ApiError('The user name you requested seems to be malformed.')
+        return
     
     s = requests.Session()
     s.headers.update({'Authorization': f'Bearer {BEARER_TOKEN}'})
 
     req = s.get(f'https://api.twitter.com/2/users/by?usernames={user_name}')
-    time.sleep(3) # rate limit
+    time.sleep(2.5) # rate limit
     
     if req.status_code != 200:
-        raise ApiError(f'There was an error sending the request. '\
-                       f'Status code {req.status_code}')
+        #raise ApiError(f'There was an error sending the request. '\
+        #               f'Status code {req.status_code}')
+        return
     
     page = json.loads(req.content)
+
+    if 'data' not in page:
+        return
 
     twitter_id = page['data'][0]['id']
     
@@ -143,8 +206,7 @@ def get_most_recent_tweets_account(ACCOUNT_ID, BEARER_TOKEN, PARAMS,
         works as intended.
     """
     if 'pagination_token' in PARAMS.keys():
-        raise ApiError('The parsed query parameters included a pagination '\
-                       'token. Check your PARAMS argument.')
+        del PARAMS['pagination_token']
         
     if 'max_results' not in PARAMS.keys() or int(PARAMS['max_results']) != 100:
         raise ApiError('Please ensure that you parse max_results: 100 to '\
@@ -166,11 +228,11 @@ def get_most_recent_tweets_account(ACCOUNT_ID, BEARER_TOKEN, PARAMS,
         if req.status_code != 200:
             raise ApiError(f'There was an error sending request '\
                            f'{request_count+1}. Status code '\
-                           f'{req.status_code}')
+                           f'{req.status_code} message {req.content}')
 
         # Get content, paginate and save rows to df
         page = json.loads(req.content)
-        
+        if 'data' not in page or 'meta' not in page: break
         if page['meta']['result_count'] == 0 and request_count == 0:
             if verbose:
                 print(f'No results found for {ACCOUNT_ID}! Returning '\
@@ -207,10 +269,11 @@ def get_most_recent_tweets_account(ACCOUNT_ID, BEARER_TOKEN, PARAMS,
         
     if save_file:
         # Save file with timestamp
-        fn = f"{ACCOUNT_ID}_"\
+        fn = f"json/{ACCOUNT_ID}_"\
              f"{datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}.csv"
         print(f'Saving file to {fn}')
-        df.to_csv(fn, index=False)
+        try: df.to_csv(fn, index=False)
+        except: return
         
     return df
 
@@ -523,3 +586,16 @@ def extract_and_download_conversation_ids(df,
                                 verbose=verbose, save_file=save_file, 
                                 reference=reference)
     return df_conv
+
+BEARER_TOKEN = read_bearer_token()
+PARAMS = {
+'max_results': "100",
+'start_time': "2010-11-06T00:00:00Z", # (YYYY-MM-DDTHH:mm:ssZ) -> RFC3339 date-time
+'end_time': "2023-01-31T23:59:59Z", # (YYYY-MM-DDTHH:mm:ssZ)
+'tweet.fields': "attachments,author_id,conversation_id,created_at,entities,geo,id,in_reply_to_user_id,lang,possibly_sensitive,public_metrics,referenced_tweets,reply_settings,source,text,withheld",
+'expansions': "attachments.poll_ids,attachments.media_keys,author_id,geo.place_id,in_reply_to_user_id,referenced_tweets.id,entities.mentions.username,referenced_tweets.id.author_id",
+'media.fields': "duration_ms,height,media_key,preview_image_url,type,url,width,public_metrics,alt_text",
+'place.fields': "contained_within,country,country_code,full_name,geo,id,name,place_type",
+'poll.fields': "duration_minutes,end_datetime,id,options,voting_status",
+'user.fields': "created_at,description,entities,id,location,name,pinned_tweet_id,profile_image_url,protected,public_metrics,url,username,verified,withheld",
+}
