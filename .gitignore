@@ -3,3 +3,4 @@ token.txt
 download_log.txt
 *.zip
 *.csv
+bearer_token.txt

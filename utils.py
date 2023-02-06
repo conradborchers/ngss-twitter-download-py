@@ -589,7 +589,7 @@ def extract_and_download_conversation_ids(df,
 
 BEARER_TOKEN = read_bearer_token()
 PARAMS = {
-'max_results': "100",
+'max_results': "500",
 'start_time': "2010-11-06T00:00:00Z", # (YYYY-MM-DDTHH:mm:ssZ) -> RFC3339 date-time
 'end_time': "2023-01-31T23:59:59Z", # (YYYY-MM-DDTHH:mm:ssZ)
 'tweet.fields': "attachments,author_id,conversation_id,created_at,entities,geo,id,in_reply_to_user_id,lang,possibly_sensitive,public_metrics,referenced_tweets,reply_settings,source,text,withheld",
